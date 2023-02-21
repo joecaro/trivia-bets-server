@@ -1,9 +1,13 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import * as dotenv from 'dotenv';
 dotenv.config();
 
 import * as url from 'url';
-import { createServer } from "http";
+import * as http from "http";
+import * as https from "https";
 import { Server } from "socket.io";
+
 import { UserClient } from "./types";
 import {
     createGame,
@@ -21,6 +25,11 @@ import { registerUser, updateGameUser, User } from "./utils/user";
 import * as mUser from './utils/mongodb/users';
 import * as mGame from './utils/mongodb/games';
 
+const https_options = {
+    ca: fs.readFileSync(path.join(__dirname, 'lib/lls/ca_bundle.crt')),
+    key: fs.readFileSync(path.join(__dirname, 'lib/lls/private.key')),
+    cert: fs.readFileSync(path.join(__dirname, 'lib/lls/certificate.crt')),
+};
 
 const clearDB = async () => {
     const games = await mGame.getGames();
@@ -78,7 +87,7 @@ function emitGame(gameId: string) {
             }, TIMEOUT);
         }
     }
-    
+
     mGame.getGame(gameId).then((game) => {
         if (game) {
             io.to(gameId).emit('gameState', game);
@@ -95,7 +104,7 @@ function shouldUpdate(id: string) {
     return false;
 }
 
-const httpServer = createServer((req, res) => {
+const httpsServer = https.createServer(https_options, (req, res) => {
     // Parse the request url
     if (req.url) {
         const reqUrl = url.parse(req.url).pathname
@@ -139,7 +148,21 @@ const httpServer = createServer((req, res) => {
     }
 });
 
-const io = new Server(httpServer, {
+const httpServer = http.createServer((req, res) => {
+    // Parse the request url
+    if (req.url) {
+        const reqUrl = url.parse(req.url).pathname
+        switch (reqUrl) {
+            default: {
+                res.writeHead(404, { 'Content-Type': 'text/html' });
+                res.write('<h1>404 Not Found. Use HTTPS</h1>');
+                res.end();
+            }
+        }
+    }
+});
+
+const io = new Server(httpsServer, {
     cors: {
         origin: "*",
         methods: ["GET", "POST"],
@@ -233,7 +256,8 @@ io.on("connection", (socket) => {
         const game = await mGame.getGame(gameId);
         if (!game) {
             console.warn('No Game Found')
-            socket.emit('noGame')        }
+            socket.emit('noGame')
+        }
         try {
             await mGame.updateGame(gameId, addAnswer(game, socket.id, answer));
             emitGame(game._id.toHexString());
@@ -297,4 +321,5 @@ io.on("connection", (socket) => {
     });
 });
 
-httpServer.listen(process.env.PORT || 8080);
+httpsServer.listen(process.env.PORT || 8080);
+httpServer.listen(8081);
