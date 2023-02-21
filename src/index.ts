@@ -297,7 +297,4 @@ io.on("connection", (socket) => {
     });
 });
 
-console.log(process.env.PORT);
-
-
 httpServer.listen(process.env.PORT || 8080);
