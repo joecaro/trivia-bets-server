@@ -5,7 +5,6 @@ import * as url from 'url';
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { UserClient } from "./types";
-import DB from "./utils/db";
 import {
     createGame,
     addAnswer,
@@ -59,9 +58,6 @@ function delayDeleteGame(gameId: string) {
     }, 1000 * 5);
 }
 
-const db = new DB();
-
-const users: { [key: string]: any } = {};
 
 let id = '';
 let isStale = false;
@@ -101,13 +97,6 @@ const httpServer = createServer((req, res) => {
                     });
                 }
                 break;
-            case '/users':
-                if (req.method === 'GET') {
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.write(JSON.stringify(users));
-                    res.end();
-                }
-                break;
             default:
                 res.writeHead(404, { 'Content-Type': 'text/html' });
                 res.write('<h1>404 Not Found</h1>');
@@ -127,12 +116,6 @@ const io = new Server(httpServer, {
 io.on("connection", (socket) => {
     let gameId: string;
     let clientUser: UserClient;
-
-    users[socket.id] = {
-        name: socket.id,
-        id: socket.id,
-    };
-
 
     console.log("a user connected");
     socket.emit('id', socket.id)
