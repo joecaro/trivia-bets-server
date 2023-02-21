@@ -1,5 +1,7 @@
 FROM node:14 as base
 
+RUN npm i typescript -g
+
 WORKDIR /home/node/app
 
 COPY package*.json ./
