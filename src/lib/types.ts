@@ -1,4 +1,4 @@
-import { Question, User } from "./classes";
+import { UserClient } from "../types"
 
 const STAGE_MAP = {
     "lobby": "lobby",
@@ -29,7 +29,7 @@ export type Round = {
 }
 
 export interface GameState {
-    users: User[]
+    users: UserClient[]
     questions: {question: string, answer: string}[];
     currentQuestionIndex: number;
     currentAnswers: AnswerGroup;

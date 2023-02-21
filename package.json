@@ -19,10 +19,9 @@
     "lib": "lib"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "clear": "node clearDb.js",
-    "serve": "npx nodemon app.ts",
-    "serve-gql": "npx nodemon appGql.ts"
+    "start": "NODE_PATH=./build node build/index.js",
+    "dev": "npx nodemon src/index.ts",
+    "build": "tsc -p ."
   },
   "author": "",
   "license": "ISC",

@@ -135,8 +135,6 @@ io.on("connection", (socket) => {
 
 
     console.log("a user connected");
-    console.log(socket.id);
-    console.log(Object.keys(users).length);
     socket.emit('id', socket.id)
 
     socket.on("create", async (name) => {
