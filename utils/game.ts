@@ -121,6 +121,9 @@ export function betToken(game: GameState, userId: string, answer: string, payout
     }
 
     const currentBet = game.currentBets[userId];
+    if (!currentBet) {
+        throw new Error("No current bet");
+    }
     user.chips = user.chips + currentBet[betIdx].chips;
     currentBet[betIdx] = { answer, payout, chips: 0 }
 

@@ -1,4 +1,4 @@
-import { AxiosError } from "axios";
+import axios, { AxiosError } from "axios";
 import { createServer } from "http";
 import url from "url";
 import { Server } from "socket.io";
@@ -7,14 +7,21 @@ import DB from "./utils/db";
 import { createGame, startGame, addAnswer, removeUserFromGame, betToken, betChip, activeUsers, leaveGame } from "./utils/game";
 import { registerUser, updateUser, User } from "./utils/user";
 
-const db = new DB();
+const baseUrl = 'http://localhost:3001/games';
 
-const users: { [key: string]: any } = {};
+const clearDB = async () => {
+    const games: { data: { id: number }[] } = await axios.get(baseUrl);
+    console.log(games.data);
+    games.data.forEach(async (game) => {
+        await axios.delete(`${baseUrl}/${game.id}`);
+    });
 
-let id = '';
-let isStale = false;
+    console.log('DB cleared');
+};
 
-function deleteGame(gameId: string) {
+clearDB();
+
+function delayDeleteGame(gameId: string) {
     setTimeout(async () => {
         const game = await db.get(gameId);
         if (game && activeUsers(game).length === 0) {
@@ -22,9 +29,18 @@ function deleteGame(gameId: string) {
             game.users.forEach((user: User) => {
                 delete users[user.id];
             });
+
+            console.log('Game deleted');
         }
-    }, 60000);
+    }, 1000 * 5);
 }
+
+const db = new DB();
+
+const users: { [key: string]: any } = {};
+
+let id = '';
+let isStale = false;
 
 const httpServer = createServer((req, res) => {
     // Parse the request url
@@ -113,6 +129,9 @@ io.on("connection", (socket) => {
 
         gameId = gameID
         const game = await db.get(gameId);
+        if (!game) {
+            throw new Error('Game not found');
+        }
         const updatedGame = await db.update(gameId, registerUser(game, name, socket.id));
         socket.emit('gameState', updatedGame)
         socket.emit('id', socket.id)
@@ -169,12 +188,18 @@ io.on("connection", (socket) => {
         console.log('start');
 
         const game = await db.get(gameId);
+        if (!game) {
+            throw new Error('Game not found');
+        }
         await db.update(gameId, startGame(game));
         isStale = true;
     });
 
     socket.on('submitAnswer', async (answer) => {
         const game = await db.get(gameId);
+        if (!game) {
+            throw new Error('Game not found');
+        }
         try {
             await db.update(gameId, addAnswer(game, socket.id, answer));
             isStale = true;
@@ -187,12 +212,18 @@ io.on("connection", (socket) => {
 
     socket.on('bet', async (answer: string, payout: number, betIdx: number) => {
         const game = await db.get(gameId);
+        if (!game) {
+            throw new Error('Game not found');
+        }
         await db.update(gameId, betToken(game, socket.id, answer, payout, betIdx));
         isStale = true;
     })
 
     socket.on('betChip', async (betIdx: number, amount: number) => {
         const game = await db.get(gameId);
+        if (!game) {
+            throw new Error('Game not found');
+        }
         await db.update(gameId, betChip(game, socket.id, betIdx, amount));
         isStale = true;
     })
@@ -201,14 +232,16 @@ io.on("connection", (socket) => {
         console.log("user disconnected");
         if (gameId) {
             const game = await db.get(gameId);
-            if (activeUsers(game).length <= 1) {
-                deleteGame(gameId);
-                gameId = '';
+            if (!game) {
+                throw new Error('Game not found');
+            }
+            if (game && activeUsers(game).length <= 1) {
+                // delay delete in case of reconnect
+                delayDeleteGame(gameId)
             } else {
                 await db.update(gameId, leaveGame(game, socket.id));
             }
         }
-        console.log(Object.keys(users).length);
         isStale = true;
     });
 });
