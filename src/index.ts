@@ -51,6 +51,8 @@ function delayDeleteGame(gameId: string) {
                 await mUser.deleteUser(user.id);
             }));
 
+            games.delete(gameId)
+
             console.log('Game deleted');
         } else {
             console.log('Game not deleted');
@@ -58,9 +60,40 @@ function delayDeleteGame(gameId: string) {
     }, 1000 * 5);
 }
 
+const TIMEOUT = 1500;
+const DELAY = 1000 / 2;
+let lastUpdate = Date.now();
+let timeout = null;
 
-let id = '';
-let isStale = false;
+type GameStale = {
+    id: string;
+}
+const games = new Map<string, GameStale>();
+
+function emitGame(gameId: string) {
+    if (!shouldUpdate(gameId)) {
+        if (games.has(gameId) && timeout === null) {
+            timeout = setTimeout(() => {
+                emitGame(gameId);
+            }, TIMEOUT);
+        }
+    }
+    
+    mGame.getGame(gameId).then((game) => {
+        if (game) {
+            io.to(gameId).emit('gameState', game);
+        }
+    });
+}
+
+function shouldUpdate(id: string) {
+    const now = Date.now();
+    if (games.has(id) && now - lastUpdate > DELAY) {
+        lastUpdate = now;
+        return true;
+    }
+    return false;
+}
 
 const httpServer = createServer((req, res) => {
     // Parse the request url
@@ -127,11 +160,11 @@ io.on("connection", (socket) => {
         clientUser = newUserCreated ? { socketId: socket.id, name: name, lastGameId: newGameId.toHexString(), lastUpdatedAt: Date.now() } : clientUser
 
         gameId = newGameId.toHexString();
-        id = newGameId.toHexString()
+        games.set(gameId, { id: gameId });
 
         socket.emit('gameState', Object.keys(newGame), newGame)
         socket.join(newGameId.toHexString())
-        isStale = true;
+        emitGame(newGameId.toHexString());
     });
 
     socket.on("register", async (name, gameID) => {
@@ -141,7 +174,8 @@ io.on("connection", (socket) => {
 
         const game = await mGame.getGame(gameID)
         if (!game) {
-            throw new Error('Game not found');
+            console.warn('No Game Found')
+            socket.emit('noGame')
         }
 
         const newUserCreated = await mUser.createUser(socket.id, name, gameID)
@@ -151,7 +185,7 @@ io.on("connection", (socket) => {
         socket.emit('gameState', updatedGame)
         socket.emit('id', socket.id)
         socket.join(game._id.toHexString())
-        isStale = true;
+        emitGame(game._id.toHexString());
     });
 
     socket.on('reconnect', async (existingId, gameid) => {
@@ -180,7 +214,7 @@ io.on("connection", (socket) => {
 
         socket.emit('gameState', updatedGame)
         socket.join(game._id.toHexString())
-        isStale = true;
+        emitGame(game._id.toHexString());
     })
 
     socket.on("nextStage", async () => {
@@ -188,20 +222,21 @@ io.on("connection", (socket) => {
 
         const game = await mGame.getGame(gameId);
         if (!game) {
-            throw new Error('Game not found');
+            console.warn('No Game Found')
+            socket.emit('noGame')
         }
         await mGame.updateGame(gameId, nextStage(game));
-        isStale = true;
+        emitGame(game._id.toHexString());
     });
 
     socket.on('submitAnswer', async (answer) => {
         const game = await mGame.getGame(gameId);
         if (!game) {
-            throw new Error('Game not found');
-        }
+            console.warn('No Game Found')
+            socket.emit('noGame')        }
         try {
             await mGame.updateGame(gameId, addAnswer(game, socket.id, answer));
-            isStale = true;
+            emitGame(game._id.toHexString());
         } catch (e) {
             if (e instanceof Error) {
                 socket.emit('error', e.message)
@@ -212,28 +247,31 @@ io.on("connection", (socket) => {
     socket.on('bet', async (answer: string, payout: number, betIdx: number) => {
         const game = await mGame.getGame(gameId);
         if (!game) {
-            throw new Error('Game not found');
+            console.warn('No Game Found')
+            socket.emit('noGame')
         }
         await mGame.updateGame(gameId, betToken(game, socket.id, answer, payout, betIdx));
-        isStale = true;
+        emitGame(game._id.toHexString());
     })
 
     socket.on('betChip', async (betIdx: number, amount: number) => {
         const game = await mGame.getGame(gameId);
         if (!game) {
-            throw new Error('Game not found');
+            console.warn('No Game Found')
+            socket.emit('noGame')
         }
         await mGame.updateGame(gameId, betChip(game, socket.id, betIdx, amount));
-        isStale = true;
+        emitGame(game._id.toHexString());
     })
 
     socket.on('newGame', async () => {
         const game = await mGame.getGame(gameId);
         if (!game) {
-            throw new Error('Game not found');
+            console.warn('No Game Found')
+            socket.emit('noGame')
         }
         await mGame.updateGame(gameId, newGame(game));
-        isStale = true;
+        emitGame(game._id.toHexString());
     })
 
     socket.on("disconnect", async () => {
@@ -241,7 +279,8 @@ io.on("connection", (socket) => {
         if (gameId) {
             const game = await mGame.getGame(gameId);
             if (!game) {
-                throw new Error('Game not found');
+                console.warn('No Game Found')
+                socket.emit('noGame')
             }
             if (!game.users) {
                 throw new Error('Game has no users');
@@ -254,19 +293,11 @@ io.on("connection", (socket) => {
                 await mGame.updateGame(gameId, leaveGame(game, socket.id));
             }
         }
-        isStale = true;
+        emitGame(gameId);
     });
 });
 
-httpServer
+console.log(process.env.PORT);
 
-httpServer.listen(8080);
 
-setInterval(async () => {
-    if (isStale && id) {
-        const game = await mGame.getGame(id)
-        io.to(id).emit("gameState", game);
-        isStale = false;
-    }
-}, 100);
-
+httpServer.listen(process.env.PORT || 8080);
