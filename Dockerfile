@@ -16,4 +16,4 @@ ENV NODE_PATH=./build
 
 RUN npm run build
 
-EXPOSE 80/tcp
+EXPOSE 8080/tcp
