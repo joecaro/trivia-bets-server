@@ -43,5 +43,13 @@ export interface GameState {
     currentAnswers: AnswerGroup;
     currentBets: BetGroup;
     rounds: Round[];
+    allRounds: Round[];
     stage: keyof typeof STAGE_MAP;
 };
+
+export type UserClient = {
+    socketId: string
+    name: string
+    lastGameId: string | null
+    lastUpdatedAt: number
+}

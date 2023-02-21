@@ -1,20 +1,34 @@
-import axios, { AxiosError } from "axios";
-import { createServer } from "http";
-import url from "url";
-import { Server } from "socket.io";
-import { GameState } from "./types";
-import DB from "./utils/db";
-import { createGame, startGame, addAnswer, removeUserFromGame, betToken, betChip, activeUsers, leaveGame } from "./utils/game";
-import { registerUser, updateUser, User } from "./utils/user";
+import * as dotenv from 'dotenv';
+dotenv.config();
 
-const baseUrl = 'http://localhost:3001/games';
+import url from "url";
+import { createServer } from "http";
+import { Server } from "socket.io";
+import { UserClient } from "./types";
+import DB from "./utils/db";
+import {
+    createGame,
+    addAnswer,
+    betToken,
+    betChip,
+    activeUsers,
+    leaveGame,
+    newGame,
+    nextStage,
+    deactivateUser
+} from "./utils/game";
+import { registerUser, updateGameUser, User } from "./utils/user";
+
+import * as mUser from './utils/mongodb/users';
+import * as mGame from './utils/mongodb/games';
+
 
 const clearDB = async () => {
-    const games: { data: { id: number }[] } = await axios.get(baseUrl);
-    console.log(games.data);
-    games.data.forEach(async (game) => {
-        await axios.delete(`${baseUrl}/${game.id}`);
-    });
+    const games = await mGame.getGames();
+
+    const responses = await Promise.all(games.map(async (game) => {
+        await mGame.deleteGame(game._id.toHexString());
+    }));
 
     console.log('DB cleared');
 };
@@ -23,14 +37,24 @@ clearDB();
 
 function delayDeleteGame(gameId: string) {
     setTimeout(async () => {
-        const game = await db.get(gameId);
+        console.log('Attempting to delete game');
+
+        const game = await mGame.getGame(gameId);
+
+        if (!game) {
+            console.log('Game not found');
+            return;
+        }
+
         if (game && activeUsers(game).length === 0) {
-            await db.delete(gameId);
-            game.users.forEach((user: User) => {
-                delete users[user.id];
-            });
+            await mGame.deleteGame(gameId);
+            await Promise.all(game.users.map(async (user) => {
+                await mUser.deleteUser(user.id);
+            }));
 
             console.log('Game deleted');
+        } else {
+            console.log('Game not deleted');
         }
     }, 1000 * 5);
 }
@@ -54,7 +78,7 @@ const httpServer = createServer((req, res) => {
                 break;
             case '/games':
                 if (req.method === 'GET') {
-                    db.getAll().then((games) => {
+                    mGame.getGames().then((games) => {
                         res.writeHead(200, { 'Content-Type': 'application/json' });
                         res.write(JSON.stringify(games));
                         res.end();
@@ -70,7 +94,7 @@ const httpServer = createServer((req, res) => {
                         res.end();
                         break;
                     }
-                    db.get(id).then((game) => {
+                    mGame.getGame(id).then((game) => {
                         res.writeHead(200, { 'Content-Type': 'application/json' });
                         res.write(JSON.stringify(game));
                         res.end();
@@ -102,6 +126,7 @@ const io = new Server(httpServer, {
 
 io.on("connection", (socket) => {
     let gameId: string;
+    let clientUser: UserClient;
 
     users[socket.id] = {
         name: socket.id,
@@ -115,12 +140,16 @@ io.on("connection", (socket) => {
     socket.emit('id', socket.id)
 
     socket.on("create", async (name) => {
-        const newGame = await db.create(createGame(new User(name, socket.id)));
-        gameId = newGame.id;
-        id = gameId.toString();
+        const newGameId = await mGame.createGame(createGame(new User(name, socket.id)));
+
+        const newUserCreated = await mUser.createUser(socket.id, name, newGameId.toHexString())
+        clientUser = newUserCreated ? { socketId: socket.id, name: name, lastGameId: newGameId.toHexString(), lastUpdatedAt: Date.now() } : clientUser
+
+        gameId = newGameId.toHexString();
+        id = newGameId.toHexString()
 
         socket.emit('gameState', Object.keys(newGame), newGame)
-        socket.join(gameId.toString())
+        socket.join(newGameId.toHexString())
         isStale = true;
     });
 
@@ -128,14 +157,19 @@ io.on("connection", (socket) => {
         console.log('register');
 
         gameId = gameID
-        const game = await db.get(gameId);
+
+        const game = await mGame.getGame(gameID)
         if (!game) {
             throw new Error('Game not found');
         }
-        const updatedGame = await db.update(gameId, registerUser(game, name, socket.id));
+
+        const newUserCreated = await mUser.createUser(socket.id, name, gameID)
+        clientUser = newUserCreated ? { socketId: socket.id, name: name, lastGameId: gameID, lastUpdatedAt: Date.now() } : clientUser
+
+        const updatedGame = await mGame.updateGame(gameId, registerUser(game, name, socket.id));
         socket.emit('gameState', updatedGame)
         socket.emit('id', socket.id)
-        socket.join(gameId.toString())
+        socket.join(game._id.toHexString())
         isStale = true;
     });
 
@@ -143,9 +177,9 @@ io.on("connection", (socket) => {
         console.log('reconnect');
 
         gameId = gameid
-        const game = await db.get(gameId) as GameState | undefined;
+        const game = await mGame.getGame(gameid)
         if (!game || !game.users) {
-            console.log('no game');
+            console.log('reconnect - no game');
             socket.emit('noReconnect')
             return;
         }
@@ -153,55 +187,39 @@ io.on("connection", (socket) => {
         const user = game.users.find((user) => user.id === existingId) as User | undefined;
 
         if (!user) {
-            console.log('no user');
+            console.log('reconnect - no user');
             socket.emit('noReconnect')
             return;
         }
 
-        const updatedGame = await db.update(gameId, updateUser(game, existingId, new User(user.name, socket.id)));
+        const updatedUser = await mUser.updateUser(socket.id, user.name, gameId)
+        clientUser = updatedUser ? { socketId: socket.id, name: user.name, lastGameId: gameId, lastUpdatedAt: Date.now() } : clientUser;
+
+        const updatedGame = await mGame.updateGame(gameId, updateGameUser(game, existingId, user.name, socket.id));
+
         socket.emit('gameState', updatedGame)
-        socket.join(gameId.toString())
+        socket.join(game._id.toHexString())
         isStale = true;
     })
 
-    socket.on("updateRegister", async (existingId, gameID) => {
-        console.log('updateRegister');
+    socket.on("nextStage", async () => {
+        console.log('nextStage');
 
-        gameId = gameID
-        const game = await db.get(gameId) as GameState | undefined;
-        if (!game) {
-            return;
-        }
-        const user = game.users.find((user) => user.id === existingId) as User | undefined;
-        if (!user) {
-            delete users[existingId]
-            socket.join(gameId.toString())
-            return;
-        }
-        const updatedGame = await db.update(gameId, updateUser(game, existingId, new User(user.name, socket.id)));
-        socket.emit('gameState', updatedGame)
-        socket.join(gameId.toString())
-        isStale = true;
-    });
-
-    socket.on("start", async () => {
-        console.log('start');
-
-        const game = await db.get(gameId);
+        const game = await mGame.getGame(gameId);
         if (!game) {
             throw new Error('Game not found');
         }
-        await db.update(gameId, startGame(game));
+        await mGame.updateGame(gameId, nextStage(game));
         isStale = true;
     });
 
     socket.on('submitAnswer', async (answer) => {
-        const game = await db.get(gameId);
+        const game = await mGame.getGame(gameId);
         if (!game) {
             throw new Error('Game not found');
         }
         try {
-            await db.update(gameId, addAnswer(game, socket.id, answer));
+            await mGame.updateGame(gameId, addAnswer(game, socket.id, answer));
             isStale = true;
         } catch (e) {
             if (e instanceof Error) {
@@ -211,35 +229,48 @@ io.on("connection", (socket) => {
     })
 
     socket.on('bet', async (answer: string, payout: number, betIdx: number) => {
-        const game = await db.get(gameId);
+        const game = await mGame.getGame(gameId);
         if (!game) {
             throw new Error('Game not found');
         }
-        await db.update(gameId, betToken(game, socket.id, answer, payout, betIdx));
+        await mGame.updateGame(gameId, betToken(game, socket.id, answer, payout, betIdx));
         isStale = true;
     })
 
     socket.on('betChip', async (betIdx: number, amount: number) => {
-        const game = await db.get(gameId);
+        const game = await mGame.getGame(gameId);
         if (!game) {
             throw new Error('Game not found');
         }
-        await db.update(gameId, betChip(game, socket.id, betIdx, amount));
+        await mGame.updateGame(gameId, betChip(game, socket.id, betIdx, amount));
+        isStale = true;
+    })
+
+    socket.on('newGame', async () => {
+        const game = await mGame.getGame(gameId);
+        if (!game) {
+            throw new Error('Game not found');
+        }
+        await mGame.updateGame(gameId, newGame(game));
         isStale = true;
     })
 
     socket.on("disconnect", async () => {
         console.log("user disconnected");
         if (gameId) {
-            const game = await db.get(gameId);
+            const game = await mGame.getGame(gameId);
             if (!game) {
                 throw new Error('Game not found');
             }
+            if (!game.users) {
+                throw new Error('Game has no users');
+            }
             if (game && activeUsers(game).length <= 1) {
                 // delay delete in case of reconnect
+                await mGame.updateGame(gameId, deactivateUser(game, socket.id))
                 delayDeleteGame(gameId)
             } else {
-                await db.update(gameId, leaveGame(game, socket.id));
+                await mGame.updateGame(gameId, leaveGame(game, socket.id));
             }
         }
         isStale = true;
@@ -252,7 +283,7 @@ httpServer.listen(8080);
 
 setInterval(async () => {
     if (isStale && id) {
-        const game = await db.get(id)
+        const game = await mGame.getGame(id)
         io.to(id).emit("gameState", game);
         isStale = false;
     }

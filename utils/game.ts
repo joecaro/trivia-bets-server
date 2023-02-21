@@ -9,6 +9,7 @@ export const defaultGameState: GameState = {
     currentAnswers: { answers: {}, closestAnswer: { userId: '', answer: '' } },
     currentBets: {},
     rounds: [],
+    allRounds: [],
     currentQuestionIndex: 0,
     stage: "lobby",
 }
@@ -66,6 +67,7 @@ export function nextRound(game: GameState) {
 
 
         game.rounds.push(currentRound);
+        game.allRounds.push(currentRound);
         game.currentAnswers = {
             answers: {},
             closestAnswer: { userId: '', answer: '' }
@@ -234,7 +236,7 @@ function generateQuestionList() {
     return questions;
 }
 
-function deactivateUser(game: GameState, userId: string): GameState {
+export function deactivateUser(game: GameState, userId: string): GameState {
     const user = game.users.find(user => user.id === userId);
 
     if (!user) {
@@ -256,7 +258,7 @@ export function leaveGame(game: GameState, userId: string): GameState {
         throw new Error("User not found");
     }
 
-    if (game.stage === 'question' || game.stage === 'bets') {
+    if (game.stage === 'question' || game.stage === 'bets' || game.stage === 'tally') {
         return deactivateUser(game, userId);
     } else {
         return {
@@ -283,4 +285,15 @@ export function reactivateUser(game: GameState, userId: string): GameState {
 
 export function activeUsers(game: GameState): User[] {
     return game.users.filter(user => user.active);
+}
+
+export function newGame(game: GameState): GameState {
+
+    return {
+        ...defaultGameState,
+        users: game.users,
+        questions: generateQuestionList(),
+        allRounds: game.allRounds,
+    }
+
 }

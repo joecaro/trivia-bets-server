@@ -18,29 +18,29 @@ export function unregisterUser(game: GameState, id: string, users: User[]): Game
     return { ...game, users: users.filter(user => user.id !== id) };
 }
 
-export function updateUser(game: GameState, id: UserId, updatedUser: User): GameState {
-    const updatedUsers = { ...game, users: game.users.map(user => user.id === id ? updatedUser : user) };
+export function updateGameUser(game: GameState, id: UserId, name: string, newId: string): GameState {
+    const updatedUsers = { ...game, users: game.users.map(user => user.id === id ? {...user, id: newId, name: name} : user) };
 
     // update current answers
     if (updatedUsers.currentAnswers.answers[id]) {
-        updatedUsers.currentAnswers.answers[updatedUser.id] = updatedUsers.currentAnswers.answers[id];
+        updatedUsers.currentAnswers.answers[newId] = updatedUsers.currentAnswers.answers[id];
         delete updatedUsers.currentAnswers.answers[id];
     }
 
     // update current bets
     if (updatedUsers.currentBets[id]) {
-        updatedUsers.currentBets[updatedUser.id] = updatedUsers.currentBets[id];
+        updatedUsers.currentBets[newId] = updatedUsers.currentBets[id];
         delete updatedUsers.currentBets[id];
     }
 
     // update rounds
     updatedUsers.rounds = updatedUsers.rounds.map(round => {
         if (round.answers.answers[id]) {
-            round.answers.answers[updatedUser.id] = round.answers.answers[id];
+            round.answers.answers[newId] = round.answers.answers[id];
             delete round.answers.answers[id];
         }
         if (round.bets[id]) {
-            round.bets[updatedUser.id] = round.bets[id];
+            round.bets[newId] = round.bets[id];
             delete round.bets[id];
         }
         return round;
