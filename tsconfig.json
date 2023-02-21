@@ -1,5 +1,6 @@
 {
     "compilerOptions": {
+        "moduleResolution": "node",
         "baseUrl": "./src",
         "target": "ESNext",
         "outDir": "./build",

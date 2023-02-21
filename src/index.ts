@@ -1,7 +1,7 @@
 import * as dotenv from 'dotenv';
 dotenv.config();
 
-import url from "url";
+import * as url from 'url';
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { UserClient } from "./types";
