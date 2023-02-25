@@ -353,4 +353,4 @@ io.on("connection", (socket) => {
 });
 
 // httpsServer.listen(process.env.PORT || 8080);
-httpServer.listen(8080);
+httpServer.listen(process.env.PORT || 8080);
