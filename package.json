@@ -18,9 +18,9 @@
     "lib": "lib"
   },
   "scripts": {
-    "start": "NODE_PATH=./build node build/index.js",
+    "start": "node build/index.js",
     "dev": "npx nodemon src/index.ts",
-    "build": "tsc -p ."
+    "build": "tsc"
   },
   "author": "",
   "license": "ISC",
