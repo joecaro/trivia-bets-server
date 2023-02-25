@@ -1,11 +1,11 @@
-import * as fs from 'fs';
-import * as path from 'path';
+// import * as fs from 'fs';
+// import * as path from 'path';
 import * as dotenv from 'dotenv';
 dotenv.config();
 
 import * as url from 'url';
 import * as http from "http";
-import * as https from "https";
+// import * as https from "https";
 import { Server } from "socket.io";
 
 import { UserClient } from "./types";
@@ -25,11 +25,11 @@ import { registerUser, updateGameUser, User } from "./utils/user";
 import * as mUser from './utils/mongodb/users';
 import * as mGame from './utils/mongodb/games';
 
-const https_options = {
-    ca: fs.readFileSync(path.join(__dirname, 'lib/lls/ca_bundle.crt')),
-    key: fs.readFileSync(path.join(__dirname, 'lib/lls/private.key')),
-    cert: fs.readFileSync(path.join(__dirname, 'lib/lls/certificate.crt')),
-};
+// const https_options = {
+//     ca: fs.readFileSync(path.join(__dirname, 'lib/lls/ca_bundle.crt')),
+//     key: fs.readFileSync(path.join(__dirname, 'lib/lls/private.key')),
+//     cert: fs.readFileSync(path.join(__dirname, 'lib/lls/certificate.crt')),
+// };
 
 const clearDB = async () => {
     const games = await mGame.getGames();
@@ -104,9 +104,54 @@ function shouldUpdate(id: string) {
     return false;
 }
 
-const httpsServer = https.createServer(https_options, (req, res) => {
+// const httpsServer = https.createServer(https_options, (req, res) => {
+//     // Parse the request url
+//     if (req.url) {
+//         const reqUrl = url.parse(req.url).pathname
+//         switch (reqUrl) {
+//             case '/':
+//                 res.writeHead(200, { 'Content-Type': 'text/html' });
+//                 res.write('<h1>Hello World!</h1>');
+//                 res.end();
+//                 break;
+//             case '/games':
+//                 if (req.method === 'GET') {
+//                     mGame.getGames().then((games) => {
+//                         res.writeHead(200, { 'Content-Type': 'application/json' });
+//                         res.write(JSON.stringify(games));
+//                         res.end();
+//                     });
+//                 }
+//                 break;
+//             case reqUrl?.match(/games\/([1-999])/)?.input:
+//                 if (req.method === 'GET') {
+//                     const id = reqUrl?.match(/games\/([1-999])/)?.[1];
+//                     if (!id) {
+//                         res.writeHead(404, { 'Content-Type': 'text/html' });
+//                         res.write('<h1>404 Not Found</h1>');
+//                         res.end();
+//                         break;
+//                     }
+//                     mGame.getGame(id).then((game) => {
+//                         res.writeHead(200, { 'Content-Type': 'application/json' });
+//                         res.write(JSON.stringify(game));
+//                         res.end();
+//                     });
+//                 }
+//                 break;
+//             default:
+//                 res.writeHead(404, { 'Content-Type': 'text/html' });
+//                 res.write('<h1>404 Not Found</h1>');
+//                 res.end();
+//                 break;
+//         }
+//     }
+// });
+
+const httpServer = http.createServer((req, res) => {
     // Parse the request url
-    if (req.url) {
+     // Parse the request url
+     if (req.url) {
         const reqUrl = url.parse(req.url).pathname
         switch (reqUrl) {
             case '/':
@@ -148,21 +193,7 @@ const httpsServer = https.createServer(https_options, (req, res) => {
     }
 });
 
-const httpServer = http.createServer((req, res) => {
-    // Parse the request url
-    if (req.url) {
-        const reqUrl = url.parse(req.url).pathname
-        switch (reqUrl) {
-            default: {
-                res.writeHead(404, { 'Content-Type': 'text/html' });
-                res.write('<h1>404 Not Found. Use HTTPS</h1>');
-                res.end();
-            }
-        }
-    }
-});
-
-const io = new Server(httpsServer, {
+const io = new Server(httpServer, {
     cors: {
         origin: "*",
         methods: ["GET", "POST"],
@@ -321,5 +352,5 @@ io.on("connection", (socket) => {
     });
 });
 
-httpsServer.listen(process.env.PORT || 8080);
-httpServer.listen(8081);
+// httpsServer.listen(process.env.PORT || 8080);
+httpServer.listen(8080);
