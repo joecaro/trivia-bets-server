@@ -1,3 +1,5 @@
+import { Socket } from "socket.io";
+import { Timer, TimerMap } from "..";
 import { Question } from "../lib/classes";
 import { witsQuestions } from "../lib/questions";
 import { BetGroup, GameState, Round } from "../types";
@@ -26,12 +28,29 @@ export function removeUserFromGame(game: GameState, userId: string): GameState {
     return { ...game, users: game.users.filter(user => user.id !== userId) }
 }
 
-export function startGame(game: GameState): GameState {
-    if (game.users.length < 1) {
-        throw new Error("Not enough players to start game");
+
+export function startNewTimer(gameId: string, timers: TimerMap, duration: number, socket: Socket, cb: () => Promise<void>) {
+    if (timers[gameId] && timers[gameId]?.intervalId) {
+        clearTimeout(timers[gameId].intervalId || 0);
     }
 
-    return nextStage(game);
+    timers[gameId] = {
+        duration: duration,
+        intervalId: setInterval(() => {
+            timers[gameId].duration--;
+            socket.emit("timer", timers[gameId].duration);
+            if (timers[gameId].duration === 0) {
+                clearInterval(timers[gameId].intervalId || 0);
+                cb();
+            }
+        }, 1000)
+    }
+}
+
+export function clearTimer(gameId: string, timers: TimerMap) {
+    if (timers[gameId] && timers[gameId]?.intervalId) {
+        clearInterval(timers[gameId].intervalId || 0);
+    }
 }
 
 export function nextStage(game: GameState): GameState {
@@ -112,7 +131,7 @@ export function addAnswer(game: GameState, userId: string, answer: string): Game
 
     answers.answers = { ...answers.answers, [userId]: { answer: answer, isCorrect: answer === currentQuestion.answer } };
 
-    return { ...game, currentAnswers: answers, stage: Object.keys(answers.answers).length === game.users.length ? 'bets' : 'question' };
+    return { ...game, currentAnswers: answers };
 }
 
 export function betToken(game: GameState, userId: string, answer: string, payout: number, betIdx: number): GameState {

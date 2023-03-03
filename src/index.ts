@@ -6,7 +6,7 @@ dotenv.config();
 import * as url from 'url';
 import * as http from "http";
 import * as https from "https";
-import { Server } from "socket.io";
+import { Server, Socket } from "socket.io";
 
 import { UserClient } from "./types";
 import {
@@ -18,7 +18,8 @@ import {
     leaveGame,
     newGame,
     nextStage,
-    deactivateUser
+    deactivateUser,
+    startNewTimer
 } from "./utils/game";
 import { registerUser, updateGameUser, User } from "./utils/user";
 
@@ -69,15 +70,25 @@ function delayDeleteGame(gameId: string) {
     }, 1000 * 5);
 }
 
+
 const TIMEOUT = 1500;
 const DELAY = 1000 / 2;
 let lastUpdate = Date.now();
+
 let timeout: NodeJS.Timeout | null = null;
 
 type GameStale = {
     id: string;
 }
+export type Timer = {
+    duration: number;
+    intervalId: NodeJS.Timer | null;
+}
+export type TimerMap = {
+    [gameId: string]: Timer;
+}
 const games = new Map<string, GameStale>();
+const timers: TimerMap = {};
 
 function emitGame(gameId: string) {
     if (!shouldUpdate(gameId)) {
@@ -102,6 +113,24 @@ function shouldUpdate(id: string) {
         return true;
     }
     return false;
+}
+
+const tryNextStage = async (socket: Socket, gameId: string) => {
+    const game = await mGame.getGame(gameId);
+    if (!game) {
+        console.warn('No Game Found')
+        socket.emit('noGame')
+        return;
+    }
+
+    const updatedGame = nextStage(game)
+
+    if (game.stage === 'question' || game.stage === 'bets') {
+        startNewTimer(gameId, timers, 30, socket,() => tryNextStage(socket, gameId));
+    }
+
+    await mGame.updateGame(gameId, updatedGame);
+    emitGame(game._id.toHexString());
 }
 
 const httpsServer = https.createServer(https_options, (req, res) => {
@@ -162,9 +191,9 @@ const httpServer = http.createServer((req, res) => {
     }
 });
 
-const io = new Server(httpsServer, {
+const io = new Server(process.env.ENV === 'dev' ? httpServer : httpsServer, {
     cors: {
-        origin: "*",
+        origin: process.env.CORS_ORIGIN,
         methods: ["GET", "POST"],
     },
 });
@@ -184,6 +213,8 @@ io.on("connection", (socket) => {
 
         gameId = newGameId.toHexString();
         games.set(gameId, { id: gameId });
+
+        timers[gameId] = { duration: 0, intervalId: null };
 
         socket.emit('gameState', Object.keys(newGame), newGame)
         socket.join(newGameId.toHexString())
@@ -241,17 +272,10 @@ io.on("connection", (socket) => {
         emitGame(game._id.toHexString());
     })
 
-    socket.on("nextStage", async () => {
+    socket.on("nextStage", () => {
         console.log('nextStage');
 
-        const game = await mGame.getGame(gameId);
-        if (!game) {
-            console.warn('No Game Found')
-            socket.emit('noGame')
-            return;
-        }
-        await mGame.updateGame(gameId, nextStage(game));
-        emitGame(game._id.toHexString());
+        tryNextStage(socket, gameId);
     });
 
     socket.on('submitAnswer', async (answer) => {
@@ -262,13 +286,15 @@ io.on("connection", (socket) => {
             return;
 
         }
-        try {
-            await mGame.updateGame(gameId, addAnswer(game, socket.id, answer));
+        const updatedGame = addAnswer(game, socket.id, answer)
+        
+        if ( Object.keys(updatedGame.currentAnswers.answers).length === game.users.length) {
+            await mGame.updateGame(gameId, updatedGame);
+            socket.emit('timer', null)
+            tryNextStage(socket, gameId);
+        } else {
+            await mGame.updateGame(gameId, updatedGame);
             emitGame(game._id.toHexString());
-        } catch (e) {
-            if (e instanceof Error) {
-                socket.emit('error', e.message)
-            }
         }
     })
 
@@ -315,7 +341,7 @@ io.on("connection", (socket) => {
             if (!game) {
                 console.warn('No Game Found')
                 socket.emit('noGame')
-            return;
+                return;
 
             }
             if (!game.users) {
