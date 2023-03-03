@@ -195,7 +195,7 @@ const socketServer = process.env.NODE_ENV === 'dev' ? httpServer : httpsServer;
 
 const io = new Server(socketServer, {
     cors: {
-        origin: process.env.CORS_ORIGIN || "*",
+        origin: "*",
         methods: ["GET", "POST"],
     },
 });
