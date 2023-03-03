@@ -288,15 +288,19 @@ io.on("connection", (socket) => {
             return;
 
         }
-        const updatedGame = addAnswer(game, socket.id, answer)
-        
-        if ( Object.keys(updatedGame.currentAnswers.answers).length === game.users.length) {
-            await mGame.updateGame(gameId, updatedGame);
-            socket.emit('timer', null)
-            tryNextStage(socket, gameId);
-        } else {
-            await mGame.updateGame(gameId, updatedGame);
-            emitGame(game._id.toHexString());
+        try {
+            const updatedGame = addAnswer(game, socket.id, answer)
+
+            if (Object.keys(updatedGame.currentAnswers.answers).length === game.users.length) {
+                await mGame.updateGame(gameId, updatedGame);
+                socket.emit('timer', null)
+                tryNextStage(socket, gameId);
+            } else {
+                await mGame.updateGame(gameId, updatedGame);
+                emitGame(game._id.toHexString());
+            }
+        } catch (e) {
+            socket.emit('error', e.message)
         }
     })
 
