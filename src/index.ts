@@ -72,7 +72,7 @@ function delayDeleteGame(gameId: string) {
 const TIMEOUT = 1500;
 const DELAY = 1000 / 2;
 let lastUpdate = Date.now();
-let timeout = null;
+let timeout: NodeJS.Timeout | null = null;
 
 type GameStale = {
     id: string;
@@ -199,6 +199,7 @@ io.on("connection", (socket) => {
         if (!game) {
             console.warn('No Game Found')
             socket.emit('noGame')
+            return;
         }
 
         const newUserCreated = await mUser.createUser(socket.id, name, gameID)
@@ -247,6 +248,7 @@ io.on("connection", (socket) => {
         if (!game) {
             console.warn('No Game Found')
             socket.emit('noGame')
+            return;
         }
         await mGame.updateGame(gameId, nextStage(game));
         emitGame(game._id.toHexString());
@@ -257,6 +259,8 @@ io.on("connection", (socket) => {
         if (!game) {
             console.warn('No Game Found')
             socket.emit('noGame')
+            return;
+
         }
         try {
             await mGame.updateGame(gameId, addAnswer(game, socket.id, answer));
@@ -273,6 +277,8 @@ io.on("connection", (socket) => {
         if (!game) {
             console.warn('No Game Found')
             socket.emit('noGame')
+            return;
+
         }
         await mGame.updateGame(gameId, betToken(game, socket.id, answer, payout, betIdx));
         emitGame(game._id.toHexString());
@@ -283,6 +289,8 @@ io.on("connection", (socket) => {
         if (!game) {
             console.warn('No Game Found')
             socket.emit('noGame')
+            return;
+
         }
         await mGame.updateGame(gameId, betChip(game, socket.id, betIdx, amount));
         emitGame(game._id.toHexString());
@@ -293,6 +301,8 @@ io.on("connection", (socket) => {
         if (!game) {
             console.warn('No Game Found')
             socket.emit('noGame')
+            return;
+
         }
         await mGame.updateGame(gameId, newGame(game));
         emitGame(game._id.toHexString());
@@ -305,6 +315,8 @@ io.on("connection", (socket) => {
             if (!game) {
                 console.warn('No Game Found')
                 socket.emit('noGame')
+            return;
+
             }
             if (!game.users) {
                 throw new Error('Game has no users');
