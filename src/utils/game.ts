@@ -1,4 +1,4 @@
-import { Socket } from "socket.io";
+import { Server, Socket } from "socket.io";
 import { Timer, TimerMap } from "..";
 import { Question } from "../lib/classes";
 import { witsQuestions } from "../lib/questions";
@@ -29,7 +29,7 @@ export function removeUserFromGame(game: GameState, userId: string): GameState {
 }
 
 
-export function startNewTimer(gameId: string, timers: TimerMap, duration: number, socket: Socket, cb: () => Promise<void>) {
+export function startNewTimer(gameId: string, timers: TimerMap, duration: number, io: Server, cb: () => Promise<void>) {
     if (timers[gameId] && timers[gameId]?.intervalId) {
         clearTimeout(timers[gameId].intervalId || 0);
     }
@@ -38,7 +38,7 @@ export function startNewTimer(gameId: string, timers: TimerMap, duration: number
         duration: duration,
         intervalId: setInterval(() => {
             timers[gameId].duration--;
-            socket.emit("timer", timers[gameId].duration);
+            io.to(gameId).emit("timer", timers[gameId].duration);
             if (timers[gameId].duration === 0) {
                 clearInterval(timers[gameId].intervalId || 0);
                 cb();

@@ -126,7 +126,7 @@ const tryNextStage = async (socket: Socket, gameId: string) => {
     const updatedGame = nextStage(game)
 
     if (game.stage === 'question' || game.stage === 'bets') {
-        startNewTimer(gameId, timers, 30, socket,() => tryNextStage(socket, gameId));
+        startNewTimer(gameId, timers, 30, io, () => tryNextStage(socket, gameId));
     }
 
     await mGame.updateGame(gameId, updatedGame);
@@ -336,6 +336,17 @@ io.on("connection", (socket) => {
         emitGame(game._id.toHexString());
     })
 
+    socket.on('destroyGame', async () => {
+        const game = await mGame.getGame(gameId);
+        if (!game) {
+            console.warn('No Game Found')
+            socket.emit('noGame')
+            return;
+        }
+        await mGame.deleteGame(gameId);
+        io.to(gameId).emit('noGame')
+    })
+
     socket.on("disconnect", async () => {
         console.log("user disconnected");
         if (gameId) {
@@ -361,9 +372,9 @@ io.on("connection", (socket) => {
     });
 });
 
-httpsServer.listen(process.env.PORT || 8080, () => {
-    console.log("listening on *:8080");
+httpsServer.listen(process.env.PORT || 8443, () => {
+    console.log(`listening on ${process.env.PORT || 8443}`);
     console.log(`WS server running using ${process.env.NODE_ENV} mode`);
     console.log(`CORS origin set to ${process.env.CORS_ORIGIN}`);
 });
-httpServer.listen(8081);
+httpServer.listen(8080);
