@@ -125,7 +125,7 @@ const tryNextStage = async (socket: Socket, gameId: string) => {
 
     const updatedGame = nextStage(game)
 
-    if (game.stage === 'question' || game.stage === 'bets') {
+    if (updatedGame.stage === 'question' || updatedGame.stage === 'bets') {
         startNewTimer(gameId, timers, 30, io, () => tryNextStage(socket, gameId));
     }
 
@@ -223,6 +223,23 @@ io.on("connection", (socket) => {
         emitGame(newGameId.toHexString());
     });
 
+    socket.on('spectate', async (gameID) => {
+        gameId = gameID
+
+        const game = await mGame.getGame(gameId)
+        if (!game) {
+            console.warn('No Game Found')
+            socket.emit('noGame')
+            return;
+        }
+
+        const newUserCreated = await mUser.createUser(socket.id, 'Player', gameID)
+        clientUser = newUserCreated ? { socketId: socket.id, name: 'Player', lastGameId: gameID, lastUpdatedAt: Date.now() } : clientUser
+
+        socket.emit('id', socket.id)
+        socket.join(game._id.toHexString())
+    })
+
     socket.on("register", async (name, gameID) => {
         console.log('register');
 
@@ -260,7 +277,7 @@ io.on("connection", (socket) => {
 
         if (!user) {
             console.log('reconnect - no user');
-            socket.emit('noReconnect')
+            socket.emit('noUserOnConnnect')
             return;
         }
 

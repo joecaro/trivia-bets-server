@@ -56,15 +56,13 @@ export function clearTimer(gameId: string, timers: TimerMap) {
 export function nextStage(game: GameState): GameState {
     switch (game.stage) {
         case "lobby":
-            return nextRound(game);
+            return { ...game, stage: "question", currentQuestionIndex: 0, currentBets: generateBlankBets(game) };
         case "question":
             return { ...game, stage: "bets" };
         case "bets":
             return { ...tallyBets(game), stage: "tally" };
         case "tally":
-            if (game.currentQuestionIndex === game.questions.length - 1) {
-                return { ...game, stage: "finished" };
-            } else return nextRound(game);
+            return nextRound(game);
         case "finished":
             return { ...game, stage: "question", currentQuestionIndex: 0 };
         default:
@@ -73,28 +71,27 @@ export function nextStage(game: GameState): GameState {
 }
 
 export function nextRound(game: GameState) {
-    if (game.stage !== "lobby") {
-        const currentRound: Round = {
-            answers: game.currentAnswers,
-            bets: game.currentBets,
-            scores: {},
-        }
-
-        for (const user of game.users) {
-           currentRound.scores[user.id] = user.chips;
-        }
-
-
-        game.rounds.push(currentRound);
-        game.allRounds.push(currentRound);
-        game.currentAnswers = {
-            answers: {},
-            closestAnswer: { userId: '', answer: '' }
-        };
+    const currentRound: Round = {
+        answers: game.currentAnswers,
+        bets: game.currentBets,
+        scores: {},
     }
+
+    for (const user of game.users) {
+        currentRound.scores[user.id] = user.chips;
+    }
+
+
+    game.rounds.push(currentRound);
+    game.allRounds.push(currentRound);
+    game.currentAnswers = {
+        answers: {},
+        closestAnswer: { userId: '', answer: '' }
+    };
+
     game.currentBets = generateBlankBets(game);
     game.currentQuestionIndex = game.currentQuestionIndex + 1;
-    game.stage = 'question';
+    game.stage = game.currentQuestionIndex > game.questions.length - 1 ? "finished" : 'question';
 
     return game;
 }
