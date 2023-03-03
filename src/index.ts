@@ -195,7 +195,7 @@ const socketServer = process.env.NODE_ENV === 'dev' ? httpServer : httpsServer;
 
 const io = new Server(socketServer, {
     cors: {
-        origin: process.env.CORS_ORIGIN,
+        origin: process.env.CORS_ORIGIN || "*",
         methods: ["GET", "POST"],
     },
 });
@@ -364,6 +364,6 @@ io.on("connection", (socket) => {
 httpsServer.listen(process.env.PORT || 8080, () => {
     console.log("listening on *:8080");
     console.log(`WS server running using ${process.env.NODE_ENV} mode`);
-    
+    console.log(`CORS origin set to ${process.env.CORS_ORIGIN}`);
 });
 httpServer.listen(8081);
