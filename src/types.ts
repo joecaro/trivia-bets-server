@@ -4,6 +4,7 @@ const STAGE_MAP = {
     "lobby": "lobby",
     "question": "question",
     "bets": "bets",
+    "betResults": "betResults",
     "tally": "tally",
     "finished": "finished"
 }
