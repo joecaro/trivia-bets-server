@@ -1,3 +1,4 @@
+import { WithId } from "mongodb";
 import { Server, Socket } from "socket.io";
 import { Timer, TimerMap } from "..";
 import { Question } from "../lib/classes";
@@ -53,7 +54,9 @@ export function clearTimer(gameId: string, timers: TimerMap) {
     }
 }
 
-export function nextStage(game: GameState): GameState {
+export function nextStage(game: WithId<GameState>, timers: TimerMap): GameState {
+    clearTimer(game._id.toHexString(), timers);
+
     switch (game.stage) {
         case "lobby":
             return { ...game, stage: "question", currentQuestionIndex: 0, currentBets: generateBlankBets(game) };

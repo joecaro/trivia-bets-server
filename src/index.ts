@@ -123,7 +123,7 @@ const tryNextStage = async (socket: Socket, gameId: string) => {
         return;
     }
 
-    const updatedGame = nextStage(game)
+    const updatedGame = nextStage(game, timers)
 
     if (updatedGame.stage === 'question' || updatedGame.stage === 'bets') {
         startNewTimer(gameId, timers, 30, io, () => tryNextStage(socket, gameId));
@@ -209,15 +209,15 @@ io.on("connection", (socket) => {
 
     socket.on("create", async (name) => {
         const newGameId = await mGame.createGame(createGame(new User(name, socket.id)));
-
+    
         const newUserCreated = await mUser.createUser(socket.id, name, newGameId.toHexString())
         clientUser = newUserCreated ? { socketId: socket.id, name: name, lastGameId: newGameId.toHexString(), lastUpdatedAt: Date.now() } : clientUser
-
+    
         gameId = newGameId.toHexString();
         games.set(gameId, { id: gameId });
-
+    
         timers[gameId] = { duration: 0, intervalId: null };
-
+    
         socket.emit('gameState', Object.keys(newGame), newGame)
         socket.join(newGameId.toHexString())
         emitGame(newGameId.toHexString());
