@@ -1,7 +1,5 @@
 import { games } from './index';
 
-import { User } from '../user'
-import * as g from '../game'
 import { GameState } from '../../types';
 import { ObjectId } from 'mongodb';
 

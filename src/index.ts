@@ -5,8 +5,9 @@ dotenv.config();
 
 import * as url from 'url';
 import * as http from "http";
-// import * as https from "https";
-import { Server } from "socket.io";
+import * as https from "https";
+import { Server, Socket } from "socket.io";
+
 
 import { UserClient } from "./types";
 import {
@@ -18,7 +19,8 @@ import {
     leaveGame,
     newGame,
     nextStage,
-    deactivateUser
+    deactivateUser,
+    startNewTimer
 } from "./utils/game";
 import { registerUser, updateGameUser, User } from "./utils/user";
 
@@ -69,15 +71,25 @@ function delayDeleteGame(gameId: string) {
     }, 1000 * 5);
 }
 
+
 const TIMEOUT = 1500;
 const DELAY = 1000 / 2;
 let lastUpdate = Date.now();
-let timeout = null;
+
+let timeout: NodeJS.Timeout | null = null;
 
 type GameStale = {
     id: string;
 }
+export type Timer = {
+    duration: number;
+    intervalId: NodeJS.Timer | null;
+}
+export type TimerMap = {
+    [gameId: string]: Timer;
+}
 const games = new Map<string, GameStale>();
+const timers: TimerMap = {};
 
 function emitGame(gameId: string) {
     if (!shouldUpdate(gameId)) {
@@ -104,51 +116,26 @@ function shouldUpdate(id: string) {
     return false;
 }
 
-// const httpsServer = https.createServer(https_options, (req, res) => {
-//     // Parse the request url
-//     if (req.url) {
-//         const reqUrl = url.parse(req.url).pathname
-//         switch (reqUrl) {
-//             case '/':
-//                 res.writeHead(200, { 'Content-Type': 'text/html' });
-//                 res.write('<h1>Hello World!</h1>');
-//                 res.end();
-//                 break;
-//             case '/games':
-//                 if (req.method === 'GET') {
-//                     mGame.getGames().then((games) => {
-//                         res.writeHead(200, { 'Content-Type': 'application/json' });
-//                         res.write(JSON.stringify(games));
-//                         res.end();
-//                     });
-//                 }
-//                 break;
-//             case reqUrl?.match(/games\/([1-999])/)?.input:
-//                 if (req.method === 'GET') {
-//                     const id = reqUrl?.match(/games\/([1-999])/)?.[1];
-//                     if (!id) {
-//                         res.writeHead(404, { 'Content-Type': 'text/html' });
-//                         res.write('<h1>404 Not Found</h1>');
-//                         res.end();
-//                         break;
-//                     }
-//                     mGame.getGame(id).then((game) => {
-//                         res.writeHead(200, { 'Content-Type': 'application/json' });
-//                         res.write(JSON.stringify(game));
-//                         res.end();
-//                     });
-//                 }
-//                 break;
-//             default:
-//                 res.writeHead(404, { 'Content-Type': 'text/html' });
-//                 res.write('<h1>404 Not Found</h1>');
-//                 res.end();
-//                 break;
-//         }
-//     }
-// });
 
-const httpServer = http.createServer((req, res) => {
+const tryNextStage = async (socket: Socket, gameId: string) => {
+    const game = await mGame.getGame(gameId);
+    if (!game) {
+        console.warn('No Game Found')
+        socket.emit('noGame')
+        return;
+    }
+
+    const updatedGame = nextStage(game, timers)
+
+    if (updatedGame.stage === 'question' || updatedGame.stage === 'bets') {
+        startNewTimer(gameId, timers, 30, io, () => tryNextStage(socket, gameId));
+    }
+
+    await mGame.updateGame(gameId, updatedGame);
+    emitGame(game._id.toHexString());
+}
+
+const httpsServer = https.createServer(https_options, (req, res) => {
     // Parse the request url
      // Parse the request url
      if (req.url) {
@@ -193,7 +180,23 @@ const httpServer = http.createServer((req, res) => {
     }
 });
 
-const io = new Server(httpServer, {
+const httpServer = http.createServer((req, res) => {
+    // Parse the request url
+    if (req.url) {
+        const reqUrl = url.parse(req.url).pathname
+        switch (reqUrl) {
+            default: {
+                res.writeHead(404, { 'Content-Type': 'text/html' });
+                res.write('<h1>404 Not Found. Use HTTPS</h1>');
+                res.end();
+            }
+        }
+    }
+});
+
+const socketServer = process.env.NODE_ENV === 'dev' ? httpServer : httpsServer;
+
+const io = new Server(socketServer, {
     cors: {
         origin: "*",
         methods: ["GET", "POST"],
@@ -216,10 +219,30 @@ io.on("connection", (socket) => {
         gameId = newGameId.toHexString();
         games.set(gameId, { id: gameId });
 
+        timers[gameId] = { duration: 0, intervalId: null };
+
         socket.emit('gameState', Object.keys(newGame), newGame)
         socket.join(newGameId.toHexString())
         emitGame(newGameId.toHexString());
     });
+
+    // Not ready yet
+    socket.on('spectate', async (gameID) => {
+        gameId = gameID
+
+        const game = await mGame.getGame(gameId)
+        if (!game) {
+            console.warn('No Game Found')
+            socket.emit('noGame')
+            return;
+        }
+
+        const newUserCreated = await mUser.createUser(socket.id, 'Player', gameID)
+        clientUser = newUserCreated ? { socketId: socket.id, name: 'Player', lastGameId: gameID, lastUpdatedAt: Date.now() } : clientUser
+
+        socket.emit('id', socket.id)
+        socket.join(game._id.toHexString())
+    })
 
     socket.on("register", async (name, gameID) => {
         console.log('register');
@@ -230,6 +253,7 @@ io.on("connection", (socket) => {
         if (!game) {
             console.warn('No Game Found')
             socket.emit('noGame')
+            return;
         }
 
         const newUserCreated = await mUser.createUser(socket.id, name, gameID)
@@ -257,30 +281,40 @@ io.on("connection", (socket) => {
 
         if (!user) {
             console.log('reconnect - no user');
-            socket.emit('noReconnect')
+            socket.emit('noUserOnConnnect')
             return;
         }
 
-        const updatedUser = await mUser.updateUser(socket.id, user.name, gameId)
+        const updatedUser = await mUser.updateUser(socket.id, "name", user.name, gameId)
         clientUser = updatedUser ? { socketId: socket.id, name: user.name, lastGameId: gameId, lastUpdatedAt: Date.now() } : clientUser;
 
-        const updatedGame = await mGame.updateGame(gameId, updateGameUser(game, existingId, user.name, socket.id));
+        const updatedGame = await mGame.updateGame(gameId, updateGameUser(game, existingId, 'active', true, socket.id));
 
         socket.emit('gameState', updatedGame)
         socket.join(game._id.toHexString())
         emitGame(game._id.toHexString());
     })
 
-    socket.on("nextStage", async () => {
-        console.log('nextStage');
-
-        const game = await mGame.getGame(gameId);
+    socket.on('updateUser', async (key, value) => {
+        console.log('updateUser');
+        console.log(key, value);
+        
+        const game = await mGame.getGame(gameId)
         if (!game) {
             console.warn('No Game Found')
             socket.emit('noGame')
+            return;
         }
-        await mGame.updateGame(gameId, nextStage(game));
+
+        await mGame.updateGame(gameId, updateGameUser(game, socket.id, key, value, socket.id));
+
         emitGame(game._id.toHexString());
+    })
+
+    socket.on("nextStage", () => {
+        console.log('nextStage');
+
+        tryNextStage(socket, gameId);
     });
 
     socket.on('submitAnswer', async (answer) => {
@@ -288,14 +322,22 @@ io.on("connection", (socket) => {
         if (!game) {
             console.warn('No Game Found')
             socket.emit('noGame')
+            return;
+
         }
         try {
-            await mGame.updateGame(gameId, addAnswer(game, socket.id, answer));
-            emitGame(game._id.toHexString());
-        } catch (e) {
-            if (e instanceof Error) {
-                socket.emit('error', e.message)
+            const updatedGame = addAnswer(game, socket.id, answer)
+
+            if (Object.keys(updatedGame.currentAnswers.answers).length === game.users.length) {
+                await mGame.updateGame(gameId, updatedGame);
+                socket.emit('timer', null)
+                tryNextStage(socket, gameId);
+            } else {
+                await mGame.updateGame(gameId, updatedGame);
+                emitGame(game._id.toHexString());
             }
+        } catch (e) {
+            socket.emit('error', e.message)
         }
     })
 
@@ -304,6 +346,8 @@ io.on("connection", (socket) => {
         if (!game) {
             console.warn('No Game Found')
             socket.emit('noGame')
+            return;
+
         }
         await mGame.updateGame(gameId, betToken(game, socket.id, answer, payout, betIdx));
         emitGame(game._id.toHexString());
@@ -314,6 +358,8 @@ io.on("connection", (socket) => {
         if (!game) {
             console.warn('No Game Found')
             socket.emit('noGame')
+            return;
+
         }
         await mGame.updateGame(gameId, betChip(game, socket.id, betIdx, amount));
         emitGame(game._id.toHexString());
@@ -324,9 +370,22 @@ io.on("connection", (socket) => {
         if (!game) {
             console.warn('No Game Found')
             socket.emit('noGame')
+            return;
+
         }
         await mGame.updateGame(gameId, newGame(game));
         emitGame(game._id.toHexString());
+    })
+
+    socket.on('destroyGame', async () => {
+        const game = await mGame.getGame(gameId);
+        if (!game) {
+            console.warn('No Game Found')
+            socket.emit('noGame')
+            return;
+        }
+        await mGame.deleteGame(gameId);
+        io.to(gameId).emit('noGame')
     })
 
     socket.on("disconnect", async () => {
@@ -336,6 +395,8 @@ io.on("connection", (socket) => {
             if (!game) {
                 console.warn('No Game Found')
                 socket.emit('noGame')
+                return;
+
             }
             if (!game.users) {
                 throw new Error('Game has no users');
@@ -352,5 +413,9 @@ io.on("connection", (socket) => {
     });
 });
 
-// httpsServer.listen(process.env.PORT || 8080);
+httpsServer.listen(process.env.PORT || 8443, () => {
+    console.log(`listening on ${process.env.PORT || 8443}`);
+    console.log(`WS server running using ${process.env.NODE_ENV} mode`);
+    console.log(`CORS origin set to ${process.env.CORS_ORIGIN}`);
+});
 httpServer.listen(8080);
