@@ -1,5 +1,5 @@
-import * as fs from 'fs';
-import * as path from 'path';
+// import * as fs from 'fs';
+// import * as path from 'path';
 import * as dotenv from 'dotenv';
 dotenv.config();
 
@@ -7,6 +7,7 @@ import * as url from 'url';
 import * as http from "http";
 import * as https from "https";
 import { Server, Socket } from "socket.io";
+
 
 import { UserClient } from "./types";
 import {
@@ -26,11 +27,11 @@ import { registerUser, updateGameUser, User } from "./utils/user";
 import * as mUser from './utils/mongodb/users';
 import * as mGame from './utils/mongodb/games';
 
-const https_options = {
-    ca: fs.readFileSync(path.join(__dirname, 'lib/lls/ca_bundle.crt')),
-    key: fs.readFileSync(path.join(__dirname, 'lib/lls/private.key')),
-    cert: fs.readFileSync(path.join(__dirname, 'lib/lls/certificate.crt')),
-};
+// const https_options = {
+//     ca: fs.readFileSync(path.join(__dirname, 'lib/lls/ca_bundle.crt')),
+//     key: fs.readFileSync(path.join(__dirname, 'lib/lls/private.key')),
+//     cert: fs.readFileSync(path.join(__dirname, 'lib/lls/certificate.crt')),
+// };
 
 const clearDB = async () => {
     const games = await mGame.getGames();
@@ -115,6 +116,7 @@ function shouldUpdate(id: string) {
     return false;
 }
 
+
 const tryNextStage = async (socket: Socket, gameId: string) => {
     const game = await mGame.getGame(gameId);
     if (!game) {
@@ -135,7 +137,8 @@ const tryNextStage = async (socket: Socket, gameId: string) => {
 
 const httpsServer = https.createServer(https_options, (req, res) => {
     // Parse the request url
-    if (req.url) {
+     // Parse the request url
+     if (req.url) {
         const reqUrl = url.parse(req.url).pathname
         switch (reqUrl) {
             case '/':
