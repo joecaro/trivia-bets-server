@@ -11,8 +11,8 @@ export const getUser = async (socketId: string) => {
     return user;
 }
 
-export const updateUser = async (socketId: string, name: string, gameId: string) => {
-    const user = await users.updateOne({ socketId }, { $set: { socketId, name, lastGameId: gameId, lastUpdatedAt: Date.now() } });
+export const updateUser = async (socketId: string, key: string, value: string, gameId: string) => {
+    const user = await users.updateOne({ socketId }, { $set: { socketId, [key]: value, lastGameId: gameId, lastUpdatedAt: Date.now() } });
 
     return user.acknowledged;
 }

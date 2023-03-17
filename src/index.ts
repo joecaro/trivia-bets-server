@@ -209,20 +209,21 @@ io.on("connection", (socket) => {
 
     socket.on("create", async (name) => {
         const newGameId = await mGame.createGame(createGame(new User(name, socket.id)));
-    
+
         const newUserCreated = await mUser.createUser(socket.id, name, newGameId.toHexString())
         clientUser = newUserCreated ? { socketId: socket.id, name: name, lastGameId: newGameId.toHexString(), lastUpdatedAt: Date.now() } : clientUser
-    
+
         gameId = newGameId.toHexString();
         games.set(gameId, { id: gameId });
-    
+
         timers[gameId] = { duration: 0, intervalId: null };
-    
+
         socket.emit('gameState', Object.keys(newGame), newGame)
         socket.join(newGameId.toHexString())
         emitGame(newGameId.toHexString());
     });
 
+    // Not ready yet
     socket.on('spectate', async (gameID) => {
         gameId = gameID
 
@@ -281,13 +282,29 @@ io.on("connection", (socket) => {
             return;
         }
 
-        const updatedUser = await mUser.updateUser(socket.id, user.name, gameId)
+        const updatedUser = await mUser.updateUser(socket.id, "name", user.name, gameId)
         clientUser = updatedUser ? { socketId: socket.id, name: user.name, lastGameId: gameId, lastUpdatedAt: Date.now() } : clientUser;
 
-        const updatedGame = await mGame.updateGame(gameId, updateGameUser(game, existingId, user.name, socket.id));
+        const updatedGame = await mGame.updateGame(gameId, updateGameUser(game, existingId, 'active', true, socket.id));
 
         socket.emit('gameState', updatedGame)
         socket.join(game._id.toHexString())
+        emitGame(game._id.toHexString());
+    })
+
+    socket.on('updateUser', async (key, value) => {
+        console.log('updateUser');
+        console.log(key, value);
+        
+        const game = await mGame.getGame(gameId)
+        if (!game) {
+            console.warn('No Game Found')
+            socket.emit('noGame')
+            return;
+        }
+
+        await mGame.updateGame(gameId, updateGameUser(game, socket.id, key, value, socket.id));
+
         emitGame(game._id.toHexString());
     })
 
